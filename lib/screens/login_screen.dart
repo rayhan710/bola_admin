@@ -1,8 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import '../providers/bola_provider.dart'; // Pastikan path ini benar sesuai folder Anda
+import 'dart:convert';
 import 'home_screen.dart';
+import 'register_screen.dart'; // Pastikan file ini ada
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -11,14 +11,13 @@ class LoginPage extends StatefulWidget {
   State<LoginPage> createState() => _LoginPageState();
 }
 
-// Tambahkan 'SingleTickerProviderStateMixin' untuk fitur Animasi
 class _LoginPageState extends State<LoginPage>
     with SingleTickerProviderStateMixin {
   final userCtrl = TextEditingController();
   final passCtrl = TextEditingController();
   bool isLoading = false;
 
-  // Variabel untuk Animasi
+  // Variabel Animasi
   late AnimationController _animController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -26,86 +25,112 @@ class _LoginPageState extends State<LoginPage>
   @override
   void initState() {
     super.initState();
-    // 1. Setup Durasi Animasi (1.2 Detik)
+    // Setup Animasi
     _animController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
 
-    // 2. Setup Fade (Muncul pelan-pelan)
     _fadeAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
     ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeIn));
 
-    // 3. Setup Slide (Gerak dari bawah ke atas)
     _slideAnimation =
-        Tween<Offset>(
-          begin: const Offset(0, 0.5), // Mulai dari agak bawah
-          end: Offset.zero, // Berhenti di posisi asli
-        ).animate(
-          CurvedAnimation(
-            parent: _animController,
-            curve: Curves.easeOutBack,
-          ), // Efek membal sedikit
+        Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero).animate(
+          CurvedAnimation(parent: _animController, curve: Curves.easeOutBack),
         );
 
-    // Jalankan Animasi saat layar dibuka
     _animController.forward();
   }
 
   @override
   void dispose() {
-    _animController
-        .dispose(); // Wajib matikan animasi saat keluar halaman agar tidak memory leak
+    _animController.dispose();
+    userCtrl.dispose();
+    passCtrl.dispose();
     super.dispose();
   }
 
-  // LOGIKA LOGIN (SAMA SEPERTI SEBELUMNYA)
+  // --- LOGIKA LOGIN UTAMA ---
   Future<void> _login() async {
+    // Validasi input kosong
+    if (userCtrl.text.isEmpty || passCtrl.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Username dan Password harus diisi!")),
+      );
+      return;
+    }
+
     setState(() => isLoading = true);
+
     try {
-      final res = await http.post(
-        Uri.parse("$baseUrl/login.php"),
+      // PENTING: Gunakan 10.0.2.2 untuk Emulator Android
+      // Pastikan path /bola_api/login.php sesuai dengan folder di XAMPP Anda
+      final url = Uri.parse("http://10.0.2.2/bola_api/login.php");
+
+      final response = await http.post(
+        url,
         body: {'username': userCtrl.text, 'password': passCtrl.text},
       );
 
-      final data = json.decode(res.body);
+      print("Status Code: ${response.statusCode}");
+      print("Response Body: ${response.body}");
+
+      // Cek jika server error (Bukan 200 OK)
+      if (response.statusCode != 200) {
+        throw Exception("Server Error: ${response.statusCode}");
+      }
+
+      final data = jsonDecode(response.body);
 
       if (data['status'] == 'success') {
-        // AMBIL ROLE DARI SERVER
-        String role = data['role'];
-
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            // KIRIM ROLE KE HOME PAGE
-            MaterialPageRoute(builder: (_) => HomePage(role: role)),
-          );
-        }
+        // Login Sukses -> Pindah ke Home
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            // Kirim role (admin/client) ke halaman Home
+            builder: (_) => HomePage(role: data['role']),
+          ),
+        );
       } else {
-        // ... error handling ...
+        // Login Gagal (Password salah / User tidak ada)
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(data['message'] ?? "Login Gagal"),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
-      // ... error handling ...
+      // --- PENANGANAN ERROR ---
+      print("ERROR LOGIN: $e"); // Muncul di Debug Console VS Code
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error: $e"), // Muncul di Layar HP
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isLoading = false);
     }
-    setState(() => isLoading = false);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // ResizeToAvoidBottomInset agar background tidak rusak saat keyboard muncul
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          // ------------------------------------------------
-          // LAYER 1: BACKGROUND IMAGE (STADION)
-          // ------------------------------------------------
+          // Background Image
           Container(
             decoration: const BoxDecoration(
               image: DecorationImage(
-                // Gambar Stadion Keren dari Unsplash
                 image: NetworkImage(
                   "https://images.unsplash.com/photo-1518091043644-c1d4457512c6?q=80&w=1000",
                 ),
@@ -113,24 +138,17 @@ class _LoginPageState extends State<LoginPage>
               ),
             ),
           ),
+          // Dark Overlay
+          Container(color: Colors.black.withOpacity(0.6)),
 
-          // ------------------------------------------------
-          // LAYER 2: DARK OVERLAY (Supaya tulisan terbaca)
-          // ------------------------------------------------
-          Container(
-            color: Colors.black.withOpacity(0.6), // Hitam transparan 60%
-          ),
-
-          // ------------------------------------------------
-          // LAYER 3: KONTEN UTAMA (LOGO & CARD)
-          // ------------------------------------------------
+          // Form Login
           Center(
             child: Padding(
               padding: const EdgeInsets.all(30.0),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Logo Bola (Animasi Fade In)
+                  // Logo Animasi
                   FadeTransition(
                     opacity: _fadeAnimation,
                     child: Column(
@@ -148,22 +166,14 @@ class _LoginPageState extends State<LoginPage>
                             fontWeight: FontWeight.bold,
                             color: Colors.white,
                             letterSpacing: 3,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black,
-                                blurRadius: 10,
-                                offset: Offset(0, 2),
-                              ),
-                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 50),
 
-                  // CARD LOGIN (Animasi Slide Up + Fade)
+                  // Card Login Animasi
                   SlideTransition(
                     position: _slideAnimation,
                     child: FadeTransition(
@@ -171,17 +181,8 @@ class _LoginPageState extends State<LoginPage>
                       child: Container(
                         padding: const EdgeInsets.all(25),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(
-                            0.9,
-                          ), // Putih agak transparan (Glass effect)
+                          color: Colors.white.withOpacity(0.9),
                           borderRadius: BorderRadius.circular(20),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Colors.black45,
-                              blurRadius: 20,
-                              offset: Offset(0, 10),
-                            ),
-                          ],
                         ),
                         child: Column(
                           children: [
@@ -190,10 +191,11 @@ class _LoginPageState extends State<LoginPage>
                               style: TextStyle(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.black87,
                               ),
                             ),
                             const SizedBox(height: 20),
+
+                            // Input Username
                             TextField(
                               controller: userCtrl,
                               decoration: InputDecoration(
@@ -207,6 +209,8 @@ class _LoginPageState extends State<LoginPage>
                               ),
                             ),
                             const SizedBox(height: 15),
+
+                            // Input Password
                             TextField(
                               controller: passCtrl,
                               obscureText: true,
@@ -221,6 +225,8 @@ class _LoginPageState extends State<LoginPage>
                               ),
                             ),
                             const SizedBox(height: 30),
+
+                            // Tombol Login
                             SizedBox(
                               width: double.infinity,
                               height: 55,
@@ -230,7 +236,6 @@ class _LoginPageState extends State<LoginPage>
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
-                                  elevation: 5,
                                 ),
                                 onPressed: isLoading ? null : _login,
                                 child: isLoading
@@ -245,7 +250,6 @@ class _LoginPageState extends State<LoginPage>
                                             "LOGIN SEKARANG",
                                             style: TextStyle(
                                               color: Colors.white,
-                                              fontSize: 16,
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
@@ -257,6 +261,34 @@ class _LoginPageState extends State<LoginPage>
                                         ],
                                       ),
                               ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // Tombol Daftar (Register)
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Text("Belum punya akun? "),
+                                GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const RegisterPage(),
+                                      ),
+                                    );
+                                  },
+                                  child: Text(
+                                    "Daftar",
+                                    style: TextStyle(
+                                      color: Colors.green[800],
+                                      fontWeight: FontWeight.bold,
+                                      decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
